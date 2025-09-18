@@ -1,70 +1,165 @@
+import logging
 from aiogram import Router, F
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from datetime import datetime
+
 from config import ADMINS, GROUP_ID
-from db import Lot
-from handlers.lots import format_price_rub  # используем готовую функцию форматирования
+from db import Lot, User, Request, AdminNotification
+from handlers.lots import format_price_rub
 
 router = Router()
+log = logging.getLogger(__name__)
 
+PREPAY_PERCENT = 20  # %
+
+def admin_notify_kb(request_id: int, link: str | None) -> InlineKeyboardMarkup:
+    rows = []
+    if link:
+        rows.append([InlineKeyboardButton(text="🔗 Перейти к объявлению", url=link)])
+    rows.append([InlineKeyboardButton(text="🙈 Скрыть это уведомление", callback_data=f"hide_req:{request_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+async def _ensure_user(session: AsyncSession, tg_id: int, username: str | None, full_name: str | None) -> User:
+    res = await session.execute(select(User).where(User.tg_id == tg_id))
+    u = res.scalars().first()
+    if not u:
+        u = User(tg_id=tg_id, username=username, full_name=full_name)
+        session.add(u)
+        await session.commit()
+        await session.refresh(u)
+    return u
+
+async def _send_admin_notification(bot, admin_id: int, text: str, kb: InlineKeyboardMarkup) -> int:
+    m = await bot.send_message(
+        chat_id=admin_id,
+        text=text,
+        reply_markup=kb,
+        disable_web_page_preview=True,
+        disable_notification=False  # ВСЕГДА СО ЗВУКОМ
+    )
+    return m.message_id
 
 # ----------- Купить без доставки -----------
 @router.callback_query(F.data.startswith("buy_lot:"))
 async def client_buy_lot(call: CallbackQuery, session: AsyncSession):
     lot_id = int(call.data.split(":")[1])
     lot = await session.get(Lot, lot_id)
-
     if not lot:
         await call.answer("❌ Лот не найден", show_alert=True)
         return
 
-    # Ссылка на сообщение в группе (если опубликован)
-    link = f"https://t.me/c/{str(GROUP_ID)[4:]}/{lot.message_id}" if lot.message_id else "—"
+    user = await _ensure_user(session, call.from_user.id, call.from_user.username, call.from_user.full_name)
+    prepay = lot.price * PREPAY_PERCENT // 100
+    req = Request(
+        user_id=user.id, target_type="lot", target_id=lot.id,
+        prepayment_amount=prepay, total_amount=lot.price,
+        status="pending", details="Самовывоз",
+        created_at=datetime.utcnow()
+    )
+    session.add(req)
+    await session.commit()
+    log.info("Request created: id=%s user_id=%s lot_id=%s", req.id, user.id, lot.id)
 
-    # Сообщение админу
-    for admin_id in ADMINS:
-        await call.bot.send_message(
-            chat_id=admin_id,
-            text=(
-                f"📢 <b>Новый заказ!</b>\n\n"
-                f"👤 Пользователь: {call.from_user.full_name} (@{call.from_user.username})\n"
-                f"🆔 Telegram ID: <code>{call.from_user.id}</code>\n\n"
-                f"📦 Лот: <b>{lot.name}</b>\n"
-                f"💰 Цена: {format_price_rub(lot.price)}\n"
-                f"🚀 Способ: Самовывоз\n\n"
-                f"🔗 <a href='{link}'>Перейти к объявлению</a>"
-            ),
-            disable_web_page_preview=True
-        )
+    link = f"https://t.me/c/{str(GROUP_ID)[4:]}/{lot.message_id}" if lot.message_id else None
+    kb = admin_notify_kb(req.id, link)
 
-    await call.answer("✅ Заявка отправлена админу. С вами скоро свяжутся!")
+    text = (
+        f"📰 <b>Новая заявка!</b>\n\n"
+        f"👤 Пользователь: {call.from_user.full_name} (@{call.from_user.username})\n"
+        f"🆔 Telegram ID: <code>{call.from_user.id}</code>\n\n"
+        f"📦 Лот: <b>{lot.name}</b>\n"
+        f"💰 Цена: {format_price_rub(lot.price)}\n"
+        f"💳 Предоплата: {format_price_rub(prepay)}\n"
+        f"🚀 Способ: Самовывоз\n"
+        f"📝 Заявка ID: <code>{req.id}</code>"
+    )
 
+    for admin_tg in ADMINS:
+        admin_user = await _ensure_user(session, admin_tg, None, None)
+        msg_id = await _send_admin_notification(call.bot, admin_tg, text, kb)
+        # запишем уведомление
+        session.add(AdminNotification(
+            admin_user_id=admin_user.id,
+            request_id=req.id,
+            tg_message_id=msg_id,
+            is_hidden=False
+        ))
+    await session.commit()
+
+    await call.answer("✅ Заявка создана. С вами скоро свяжутся!")
 
 # ----------- Купить с доставкой -----------
 @router.callback_query(F.data.startswith("buy_lot_delivery:"))
 async def client_buy_lot_delivery(call: CallbackQuery, session: AsyncSession):
     lot_id = int(call.data.split(":")[1])
     lot = await session.get(Lot, lot_id)
-
     if not lot:
         await call.answer("❌ Лот не найден", show_alert=True)
         return
 
-    link = f"https://t.me/c/{str(GROUP_ID)[4:]}/{lot.message_id}" if lot.message_id else "—"
+    user = await _ensure_user(session, call.from_user.id, call.from_user.username, call.from_user.full_name)
+    prepay = lot.price * PREPAY_PERCENT // 100
+    req = Request(
+        user_id=user.id, target_type="lot", target_id=lot.id,
+        prepayment_amount=prepay, total_amount=lot.price,
+        status="pending", details="Доставка",
+        created_at=datetime.utcnow()
+    )
+    session.add(req)
+    await session.commit()
+    log.info("Request created (delivery): id=%s user_id=%s lot_id=%s", req.id, user.id, lot.id)
 
-    for admin_id in ADMINS:
-        await call.bot.send_message(
-            chat_id=admin_id,
-            text=(
-                f"📢 <b>Новый заказ (с доставкой)!</b>\n\n"
-                f"👤 Пользователь: {call.from_user.full_name} (@{call.from_user.username})\n"
-                f"🆔 Telegram ID: <code>{call.from_user.id}</code>\n\n"
-                f"📦 Лот: <b>{lot.name}</b>\n"
-                f"💰 Цена: {format_price_rub(lot.price)}\n"
-                f"🚚 Способ: Доставка\n\n"
-                f"🔗 <a href='{link}'>Перейти к объявлению</a>"
-            ),
-            disable_web_page_preview=True
+    link = f"https://t.me/c/{str(GROUP_ID)[4:]}/{lot.message_id}" if lot.message_id else None
+    kb = admin_notify_kb(req.id, link)
+
+    text = (
+        f"📰 <b>Новая заявка (доставка)!</b>\n\n"
+        f"👤 Пользователь: {call.from_user.full_name} (@{call.from_user.username})\n"
+        f"🆔 Telegram ID: <code>{call.from_user.id}</code>\n\n"
+        f"📦 Лот: <b>{lot.name}</b>\n"
+        f"💰 Цена: {format_price_rub(lot.price)}\n"
+        f"💳 Предоплата: {format_price_rub(prepay)}\n"
+        f"🚚 Способ: Доставка\n"
+        f"📝 Заявка ID: <code>{req.id}</code>"
+    )
+
+    for admin_tg in ADMINS:
+        admin_user = await _ensure_user(session, admin_tg, None, None)
+        msg_id = await _send_admin_notification(call.bot, admin_tg, text, kb)
+        session.add(AdminNotification(
+            admin_user_id=admin_user.id,
+            request_id=req.id,
+            tg_message_id=msg_id,
+            is_hidden=False
+        ))
+    await session.commit()
+
+    await call.answer("✅ Заявка с доставкой создана!")
+
+# ----------- Скрыть уведомление у админа -----------
+@router.callback_query(F.data.startswith("hide_req:"))
+async def hide_admin_notification(call: CallbackQuery, session: AsyncSession):
+    req_id = int(call.data.split(":")[1])
+    # найдём пользователя-админа в нашей БД
+    res_admin = await session.execute(select(User).where(User.tg_id == call.from_user.id))
+    admin_user = res_admin.scalars().first()
+    if admin_user:
+        # отмечаем последнее уведомление как скрытое
+        res_note = await session.execute(
+            select(AdminNotification)
+            .where(AdminNotification.admin_user_id == admin_user.id,
+                   AdminNotification.request_id == req_id,
+                   AdminNotification.is_hidden == False)
+            .order_by(AdminNotification.created_at.desc())
         )
-
-    await call.answer("✅ Заявка с доставкой отправлена админу!")
+        note = res_note.scalars().first()
+        if note:
+            note.is_hidden = True
+            await session.commit()
+    try:
+        await call.message.delete()
+    except:
+        pass
+    await call.answer("Скрыто ✅")
