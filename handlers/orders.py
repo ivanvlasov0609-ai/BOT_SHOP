@@ -17,6 +17,9 @@ PREPAY_PERCENT = 20
 def s_badge(status: str) -> str:
     return {"pending": "🟢 Новая", "processing": "🟠 В работе", "done": "🔴 Закрыта"}.get(status, status)
 
+def fmt_dt_ru(dt: datetime) -> str:
+    return dt.strftime("%d.%m.%Y %H:%M")
+
 def admin_notify_kb(request_id: int, link: str | None) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="🛠 Взять в работу", callback_data=f"req_take:{request_id}")]
@@ -41,6 +44,20 @@ async def _send_admin_notification(bot, admin_id: int, text: str, kb: InlineKeyb
     )
     return m.message_id
 
+# ----------- общий отправитель клиенту -----------
+async def _send_client_created(bot, user_tg: int, req_id: int, lot_name: str, price: int, prepay: int, method: str):
+    await bot.send_message(
+        chat_id=user_tg,
+        text=(
+            f"📢 <b>Ваша заявка #{req_id} принята</b>\n"
+            f"🧾 Товар: {lot_name}\n"
+            f"💰 Сумма: {format_price_rub(price)}\n"
+            f"💳 Предоплата: {format_price_rub(prepay)}\n"
+            f"{'🚚 Способ: Доставка' if method=='delivery' else '🚀 Способ: Самовывоз'}\n"
+            f"🙏 Спасибо, что выбрали нас!"
+        )
+    )
+
 # ----------- Купить без доставки -----------
 @router.callback_query(F.data.startswith("buy_lot:"))
 async def client_buy_lot(call: CallbackQuery, session: AsyncSession):
@@ -61,15 +78,10 @@ async def client_buy_lot(call: CallbackQuery, session: AsyncSession):
     session.add(req); await session.commit()
     log.info("Request created: id=%s user_id=%s lot_id=%s", req.id, user.id, lot.id)
 
-    # сообщение клиенту
-    await call.bot.send_message(
-        chat_id=user.tg_id,
-        text=(f"📢 Ваша заявка #{req.id} принята.\n"
-              f"Товар: {lot.name}\n"
-              f"Сумма: {format_price_rub(lot.price)} (предоплата {format_price_rub(prepay)})\n"
-              f"Способ: Самовывоз")
-    )
+    # клиенту
+    await _send_client_created(call.bot, user.tg_id, req.id, lot.name, lot.price, prepay, "pickup")
 
+    # админам
     link = f"https://t.me/c/{str(GROUP_ID)[4:]}/{lot.message_id}" if lot.message_id else None
     kb = admin_notify_kb(req.id, link)
     text = (
@@ -79,6 +91,7 @@ async def client_buy_lot(call: CallbackQuery, session: AsyncSession):
         f"📦 Лот: <b>{lot.name}</b>\n"
         f"💰 Цена: {format_price_rub(lot.price)}\n"
         f"💳 Предоплата: {format_price_rub(prepay)}\n"
+        f"🗓 Создана: {fmt_dt_ru(req.created_at)}\n"
         f"🚀 Способ: Самовывоз\n"
         f"📝 Заявка ID: <code>{req.id}</code>"
     )
@@ -113,14 +126,8 @@ async def client_buy_lot_delivery(call: CallbackQuery, session: AsyncSession):
     session.add(req); await session.commit()
     log.info("Request created (delivery): id=%s user_id=%s lot_id=%s", req.id, user.id, lot.id)
 
-    # сообщение клиенту
-    await call.bot.send_message(
-        chat_id=user.tg_id,
-        text=(f"📢 Ваша заявка #{req.id} принята.\n"
-              f"Товар: {lot.name}\n"
-              f"Сумма: {format_price_rub(lot.price)} (предоплата {format_price_rub(prepay)})\n"
-              f"Способ: Доставка")
-    )
+    # клиенту
+    await _send_client_created(call.bot, user.tg_id, req.id, lot.name, lot.price, prepay, "delivery")
 
     link = f"https://t.me/c/{str(GROUP_ID)[4:]}/{lot.message_id}" if lot.message_id else None
     kb = admin_notify_kb(req.id, link)
@@ -131,6 +138,7 @@ async def client_buy_lot_delivery(call: CallbackQuery, session: AsyncSession):
         f"📦 Лот: <b>{lot.name}</b>\n"
         f"💰 Цена: {format_price_rub(lot.price)}\n"
         f"💳 Предоплата: {format_price_rub(prepay)}\n"
+        f"🗓 Создана: {fmt_dt_ru(req.created_at)}\n"
         f"🚚 Способ: Доставка\n"
         f"📝 Заявка ID: <code>{req.id}</code>"
     )

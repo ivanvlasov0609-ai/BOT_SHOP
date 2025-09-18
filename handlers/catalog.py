@@ -49,15 +49,33 @@ async def show_catalog(call: CallbackQuery, session: AsyncSession):
     await call.message.answer("\n".join(lines), disable_web_page_preview=True, reply_markup=kb)
 
 @router.callback_query(F.data == "back_to_main_k")
-async def back_to_main_k(call: CallbackQuery):
+async def back_to_main_k(call: CallbackQuery, session: AsyncSession):
+    from sqlalchemy.future import select
+    from db import User, AdminUIState
+
     try:
         await call.message.delete()
     except:
         pass
 
     kb = build_admin_main_kb() if call.from_user.id in ADMINS else client_kb
-    await call.message.answer_photo(
+    m = await call.message.answer_photo(
         photo=START_PHOTO,
         caption="👋 Добро пожаловать!\n\nВыберите действие ниже:",
         reply_markup=kb
     )
+
+    # если админ — сохраним id меню
+    if call.from_user.id in ADMINS:
+        res = await session.execute(select(User).where(User.tg_id == call.from_user.id))
+        admin = res.scalars().first()
+        if admin:
+            # upsert
+            q = await session.execute(select(AdminUIState).where(AdminUIState.admin_user_id == admin.id))
+            row = q.scalars().first()
+            if not row:
+                row = AdminUIState(admin_user_id=admin.id, last_menu_message_id=m.message_id)
+                session.add(row)
+            else:
+                row.last_menu_message_id = m.message_id
+            await session.commit()

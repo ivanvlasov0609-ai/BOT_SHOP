@@ -263,3 +263,32 @@ async def toggle_status(call: CallbackQuery, session: AsyncSession, bot: Bot):
 
     await call.answer("✅ Статус изменён")
     await list_lots(call, session)
+def build_buy_kb(lot_id: int) -> InlineKeyboardMarkup:
+    """
+    Кнопки покупки, которые должны быть у ПОЛЬЗОВАТЕЛЕЙ под постом лота.
+    """
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛒 Купить (самовывоз)", callback_data=f"buy_lot:{lot_id}")],
+        [InlineKeyboardButton(text="🚚 Купить с доставкой", callback_data=f"buy_lot_delivery:{lot_id}")]
+    ])
+
+async def refresh_lot_keyboard(bot, lot) -> None:
+    """
+    Обновляет клавиатуру под сообщением лота в группе:
+    - если lot.is_active == True -> показываем кнопки
+    - если False -> убираем кнопки
+    Требуется, чтобы в lot.message_id был id сообщения в группе.
+    """
+    if not getattr(lot, "message_id", None):
+        return  # нечего обновлять
+
+    kb = build_buy_kb(lot.id) if getattr(lot, "is_active", False) else None
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=GROUP_ID,               # если у тебя supergroup вида -100..., в config.GROUP_ID уже должен храниться такой id
+            message_id=lot.message_id,
+            reply_markup=kb
+        )
+    except Exception:
+        # например, сообщение уже удалено/нельзя редактировать — проглатываем
+        pass

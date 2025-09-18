@@ -20,7 +20,13 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     orders = relationship("Request", back_populates="user")
+class AdminUIState(Base):
+    __tablename__ = "admin_ui_state"
 
+    id = Column(Integer, primary_key=True)
+    admin_user_id = Column(Integer, nullable=False)  # FK не обязательно
+    last_menu_message_id = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 class Lot(Base):
     __tablename__ = "lots"
     id = Column(Integer, primary_key=True, index=True)
