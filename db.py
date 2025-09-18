@@ -11,23 +11,15 @@ Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
+
     id = Column(Integer, primary_key=True, index=True)
     tg_id = Column(BigInteger, unique=True, nullable=False)
     username = Column(String, nullable=True)
     full_name = Column(String, nullable=True)
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    orders = relationship("Request", back_populates="user")
-    settings = relationship("AdminSettings", uselist=False, back_populates="user")
 
-class AdminSettings(Base):
-    __tablename__ = "admin_settings"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    notify_silent = Column(Boolean, default=False)  # (на будущее) сейчас всегда со звуком
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
-    user = relationship("User", back_populates="settings")
+    orders = relationship("Request", back_populates="user")
 
 class Lot(Base):
     __tablename__ = "lots"
@@ -106,17 +98,27 @@ class Product(Base):
 
 class Request(Base):
     __tablename__ = "requests"
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     target_type = Column(String, nullable=False)   # 'lot' | 'product'
-    target_id = Column(Integer, nullable=False)
+    target_id = Column(Integer, nullable=False)    # lots.id OR products.id
     promocode_id = Column(Integer, ForeignKey("promocodes.id"), nullable=True)
     prepayment_amount = Column(Integer, default=0)
     total_amount = Column(Integer, nullable=False)
+
+    # Статусы: pending | processing | done
     status = Column(String, default="pending")
     details = Column(Text, nullable=True)
+
+    # Новые поля для учёта исполнителя и времени
+    taken_by_admin_id = Column(Integer, nullable=True)
+    taken_at = Column(DateTime, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=True)
+
     user = relationship("User", back_populates="orders")
     promocode = relationship("PromoCode")
 
