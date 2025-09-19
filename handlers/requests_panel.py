@@ -7,10 +7,10 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
-
+from aiogram.types import FSInputFile
 from db import Request, User, Lot, Product, AdminNotification
 from handlers.lots import format_price_rub
-from config import GROUP_ID,START_PHOTO
+from config import GROUP_ID,START_PHOTO,PHOTOS
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -77,7 +77,6 @@ def list_requests_kb(entries, status: str, page: int, total_pages: int):
 def combined_kb(req: Request, user_tg_id: int | None, lot_link: str | None):
     rows = []
 
-    # действия по заявке
     if req.status == "pending":
         rows.append([InlineKeyboardButton(text="🛠 Взять в работу", callback_data=f"req_take:{req.id}")])
     elif req.status == "processing":
@@ -85,20 +84,19 @@ def combined_kb(req: Request, user_tg_id: int | None, lot_link: str | None):
     elif req.status == "done":
         rows.append([InlineKeyboardButton(text="🔄 Взять в работу снова", callback_data=f"req_take:{req.id}")])
 
-    # блок по лоту
     if req.target_type == "lot":
         rows.append([InlineKeyboardButton(text="🔁 Сменить статус лота", callback_data=f"req_toggle_lot:{req.id}")])
         if lot_link:
             rows.append([InlineKeyboardButton(text="📦 Открыть лот", url=lot_link)])
 
-    # ссылки/связь с клиентом
     if user_tg_id:
         rows.append([InlineKeyboardButton(text="👤 Открыть клиента", url=f"tg://user?id={user_tg_id}")])
 
     if req.status != "done":
         rows.append([InlineKeyboardButton(text="✉️ Написать клиенту", callback_data=f"req_msg:{req.id}")])
 
-    rows.append([InlineKeyboardButton(text="⬅ К списку", callback_data=f"req_tab:{req.status}:0")])
+    # 🔽 вот здесь меняем
+    rows.append([InlineKeyboardButton(text="⬅ К разделам", callback_data="requests")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def lot_link_or_none(lot: Lot | None) -> str | None:
@@ -113,6 +111,7 @@ class RequestMessage(StatesGroup):
 # ---------- root ----------
 @router.callback_query(F.data == "requests")
 async def requests_root(call: CallbackQuery, session: AsyncSession):
+    await call.answer()
     counts, total = await get_counts(session)
 
     # вместо edit_caption — удаляем и отправляем новое с нужной фоткой
@@ -122,7 +121,7 @@ async def requests_root(call: CallbackQuery, session: AsyncSession):
         pass
 
     await call.message.answer_photo(
-        photo=START_PHOTO,
+        photo=FSInputFile(PHOTOS["requests_panel"]),
         caption=f"📑 Заявки (всего: {total})",
         reply_markup=requests_root_kb(counts)
     )
@@ -130,6 +129,7 @@ async def requests_root(call: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data.startswith("req_tab:"))
 async def open_requests_tab(call: CallbackQuery, session: AsyncSession):
+    await call.answer()
     # формат: req_tab:{status}:{page}
     parts = call.data.split(":")
     status = parts[1]
@@ -165,11 +165,21 @@ async def open_requests_tab(call: CallbackQuery, session: AsyncSession):
         entries.append((r.id, _entry_title(r, name, price)))
 
     caption = f"📂 {s_badge(status)} заявки (стр. {page+1}/{total_pages}):"
-    await call.message.edit_caption(caption=caption, reply_markup=list_requests_kb(entries, status, page, total_pages))
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await call.message.answer_photo(
+        photo=FSInputFile(PHOTOS["requests_panel"]),  # фото панели заявок
+        caption=caption,
+        reply_markup=list_requests_kb(entries, status, page, total_pages)
+    )
 
 # ---------- open card ----------
 @router.callback_query(F.data.startswith("req_open:"))
 async def req_open(call: CallbackQuery, session: AsyncSession):
+    await call.answer()
     req_id = int(call.data.split(":")[1])
     req = await session.get(Request, req_id)
     if not req:
@@ -304,6 +314,7 @@ async def _edit_my_notification(session: AsyncSession, bot, req: Request, admin_
 # ---------- take / close ----------
 @router.callback_query(F.data.startswith("req_take:"))
 async def req_take(call: CallbackQuery, session: AsyncSession):
+    await call.answer()
     req_id = int(call.data.split(":")[1])
     req = await session.get(Request, req_id)
     if not req:
@@ -347,6 +358,7 @@ async def req_take(call: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data.startswith("req_close:"))
 async def req_close(call: CallbackQuery, session: AsyncSession):
+    await call.answer()
     req_id = int(call.data.split(":")[1])
     req = await session.get(Request, req_id)
     if not req:
@@ -388,6 +400,7 @@ async def req_close(call: CallbackQuery, session: AsyncSession):
 # ---------- toggle lot status ----------
 @router.callback_query(F.data.startswith("req_toggle_lot:"))
 async def req_toggle_lot(call: CallbackQuery, session: AsyncSession):
+    await call.answer()
     from handlers.lots import refresh_lot_keyboard  # <-- импорт тут, чтобы не было циклов на уровне модуля
 
     req_id = int(call.data.split(":")[1])
@@ -419,12 +432,14 @@ class RequestMessage(StatesGroup):
 
 @router.callback_query(F.data.startswith("req_msg:"))
 async def req_msg_begin(call: CallbackQuery, state: FSMContext):
+    await call.answer()
     await state.update_data(req_id=int(call.data.split(":")[1]))
     await state.set_state(RequestMessage.wait_text)
     await call.message.answer("Напишите текст для клиента (или /cancel):")
 
 @router.message(RequestMessage.wait_text)
 async def req_msg_send(msg: Message, state: FSMContext, session: AsyncSession):
+    await call.answer()
     data = await state.get_data()
     req = await session.get(Request, int(data["req_id"])) if data else None
     user = await session.get(User, req.user_id) if req else None

@@ -1,6 +1,6 @@
 import logging
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,FSInputFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -60,7 +60,7 @@ async def back_to_main_k(call: CallbackQuery, session: AsyncSession):
 
     kb = build_admin_main_kb() if call.from_user.id in ADMINS else client_kb
     m = await call.message.answer_photo(
-        photo=START_PHOTO,
+        photo=FSInputFile(START_PHOTO),
         caption="👋 Добро пожаловать!\n\nВыберите действие ниже:",
         reply_markup=kb
     )

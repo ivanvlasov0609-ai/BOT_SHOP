@@ -12,7 +12,8 @@ from sqlalchemy.future import select
 from config import ADMINS, GROUP_ID
 from db import Lot, User
 from keyboards.inline import lots_menu_kb, back_kb
-from config import START_PHOTO
+from config import START_PHOTO,PHOTOS
+from aiogram.types import FSInputFile
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -37,13 +38,13 @@ def parse_price_to_int(text: str):
 # ---------------- Меню Лоты ----------------
 @router.callback_query(F.data == "lots")
 async def lots_menu(call: CallbackQuery):
+    await call.answer()
     try:
         await call.message.delete()
     except:
         pass
-
     await call.message.answer_photo(
-        photo=START_PHOTO,
+        photo=FSInputFile(PHOTOS["lots_panel"]),
         caption="📦 <b>Раздел лотов:</b>\n\nВыберите действие:",
         reply_markup=lots_menu_kb
     )
@@ -150,6 +151,7 @@ async def set_photo(msg: Message, state: FSMContext):
 # ---------------- Publish ----------------
 @router.callback_query(F.data == "publish_lot")
 async def publish_lot(call: CallbackQuery, state: FSMContext, bot: Bot, session: AsyncSession):
+    await call.answer()
     data = await state.get_data()
     if not data:
         await call.answer("⚠ Ошибка: данные не найдены", show_alert=True)
@@ -194,6 +196,7 @@ async def publish_lot(call: CallbackQuery, state: FSMContext, bot: Bot, session:
 # ---------------- Список лотов ----------------
 @router.callback_query(F.data == "admin_lots")
 async def list_lots(call: CallbackQuery, session: AsyncSession):
+    await call.answer()
     res = await session.execute(select(Lot))
     lots = res.scalars().all()
 
@@ -203,7 +206,7 @@ async def list_lots(call: CallbackQuery, session: AsyncSession):
         except:
             pass
         await call.message.answer_photo(
-            photo=START_PHOTO,
+            photo=FSInputFile(PHOTOS["lots_panel"]),
             caption="📋 Список лотов пуст",
             reply_markup=lots_menu_kb
         )
@@ -228,7 +231,7 @@ async def list_lots(call: CallbackQuery, session: AsyncSession):
     except:
         pass
     await call.message.answer_photo(
-        photo=START_PHOTO,
+        photo=FSInputFile(PHOTOS["lots_panel"]),
         caption="📋 <b>Список лотов:</b>\n\nЗдесь вы можете управлять статусами:",
         reply_markup=kb
     )

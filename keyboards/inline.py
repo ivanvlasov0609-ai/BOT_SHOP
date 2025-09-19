@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton,ReplyKeyboardMarkup, KeyboardButton
 
 # Клиентское меню (заявок тут нет)
 client_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -40,3 +40,9 @@ def back_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅ Назад", callback_data="lots")]
     ])
+admin_reply_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🏠 Вернуться в меню")],
+    ],
+    resize_keyboard=True
+)
