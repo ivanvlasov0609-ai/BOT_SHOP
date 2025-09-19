@@ -48,7 +48,8 @@ async def main():
 
     dp.include_router(start.router)
     dp.include_router(raffle.router)
-    dp.include_router(lots.router)
+    for r in lots.routers:
+        dp.include_router(r)
     dp.include_router(orders.router)
     dp.include_router(catalog.router)
     dp.include_router(requests_panel.router)  # <-- подключили

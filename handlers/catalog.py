@@ -1,10 +1,10 @@
 import logging
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,FSInputFile
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from config import START_PHOTO, GROUP_ID, ADMINS
+from config import START_PHOTO, ADMINS
 from db import Lot
 from handlers.lots import format_price_rub
 from keyboards.inline import client_kb, build_admin_main_kb
@@ -12,70 +12,69 @@ from keyboards.inline import client_kb, build_admin_main_kb
 router = Router()
 log = logging.getLogger(__name__)
 
+
+def _availability(is_active: bool) -> str:
+    return "🟢 В наличии" if is_active else "🔴 Продан"
+
+
 @router.callback_query(F.data == "catalog")
 async def show_catalog(call: CallbackQuery, session: AsyncSession):
+    """Вывод каталога лотов ОДНИМ сообщением, как у тебя было раньше."""
     try:
         await call.message.delete()
-    except:
+    except Exception:
         pass
 
-    res = await session.execute(select(Lot))
-    lots = res.scalars().all()
+    result = await session.execute(select(Lot))
+    lots = result.scalars().all()
 
     if not lots:
-        await call.message.answer(
-            "📦 Каталог пуст, пока нет доступных лотов.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_main_k")]
-            ])
-        )
+        # если пусто — просто вернёмся на старт с меню
+        try:
+            await call.message.answer_photo(
+                FSInputFile(START_PHOTO),
+                caption="📦 Каталог пуст.",
+                reply_markup=client_kb if call.from_user.id not in ADMINS else build_admin_main_kb()
+            )
+        except Exception:
+            await call.message.answer(
+                "📦 Каталог пуст.",
+                reply_markup=client_kb if call.from_user.id not in ADMINS else build_admin_main_kb()
+            )
         return
 
-    lines = ["🗂 <b>Каталог лотов:</b>\n"]
+    # формируем текст каталога
+    lines = ["📂 <b>Каталог лотов:</b>", ""]
     for lot in lots:
-        status = "🟢 В наличии" if lot.is_active else "🔴 Нет в наличии"
-        link = f"https://t.me/c/{str(GROUP_ID)[4:]}/{lot.message_id}" if lot.message_id else None
-        lines.append(
-            (f"📦 <a href='{link}'>Лот ID: {lot.id}</a> | {lot.name}\n" if link else
-             f"📦 Лот ID: {lot.id} | {lot.name}\n")
-            + f"💵 {format_price_rub(lot.price)}\n"
-            + f"{status}\n"
-            + "──────────────────────"
-        )
+        lines.append(f"📦 <b>Лот ID: {lot.id}</b> | {lot.name}")
+        lines.append(f"💰 {format_price_rub(lot.price)}")
+        lines.append(_availability(lot.is_active))
+        lines.append("──────────────────────")
+    text = "\n".join(lines).rstrip("─\n")
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_main_k")]
-    ])
-    await call.message.answer("\n".join(lines), disable_web_page_preview=True, reply_markup=kb)
-
-@router.callback_query(F.data == "back_to_main_k")
-async def back_to_main_k(call: CallbackQuery, session: AsyncSession):
-    from sqlalchemy.future import select
-    from db import User, AdminUIState
-
-    try:
-        await call.message.delete()
-    except:
-        pass
-
-    kb = build_admin_main_kb() if call.from_user.id in ADMINS else client_kb
-    m = await call.message.answer_photo(
-        photo=FSInputFile(START_PHOTO),
-        caption="👋 Добро пожаловать!\n\nВыберите действие ниже:",
-        reply_markup=kb
+    back_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_main_k")]]
     )
 
-    # если админ — сохраним id меню
-    if call.from_user.id in ADMINS:
-        res = await session.execute(select(User).where(User.tg_id == call.from_user.id))
-        admin = res.scalars().first()
-        if admin:
-            # upsert
-            q = await session.execute(select(AdminUIState).where(AdminUIState.admin_user_id == admin.id))
-            row = q.scalars().first()
-            if not row:
-                row = AdminUIState(admin_user_id=admin.id, last_menu_message_id=m.message_id)
-                session.add(row)
-            else:
-                row.last_menu_message_id = m.message_id
-            await session.commit()
+    await call.message.answer(text, reply_markup=back_kb)
+
+
+@router.callback_query(F.data == "back_to_main_k")
+async def back_to_main(call: CallbackQuery):
+    """Возврат в главное меню (как было)."""
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    try:
+        await call.message.answer_photo(
+            FSInputFile(START_PHOTO),
+            caption="🏠 Главное меню",
+            reply_markup=client_kb if call.from_user.id not in ADMINS else build_admin_main_kb()
+        )
+    except Exception:
+        await call.message.answer(
+            "🏠 Главное меню",
+            reply_markup=client_kb if call.from_user.id not in ADMINS else build_admin_main_kb()
+        )
