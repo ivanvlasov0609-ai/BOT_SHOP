@@ -236,6 +236,8 @@ async def list_lots(call: CallbackQuery, session: AsyncSession):
 # ---------------- Смена статуса ----------------
 @router.callback_query(F.data.startswith("toggle_status:"))
 async def toggle_status(call: CallbackQuery, session: AsyncSession, bot: Bot):
+    from handlers.lots import refresh_lot_keyboard  # локальный импорт, чтобы не ловить циклы
+
     lot_id = int(call.data.split(":")[1])
     lot = await session.get(Lot, lot_id)
 
@@ -243,11 +245,13 @@ async def toggle_status(call: CallbackQuery, session: AsyncSession, bot: Bot):
         await call.answer("❌ Лот не найден", show_alert=True)
         return
 
+    # 1) Переключаем статус в БД
     lot.is_active = not lot.is_active
     lot.status = "active" if lot.is_active else "archived"
     await session.commit()
     log.info("Lot status toggled: id=%s, is_active=%s", lot.id, lot.is_active)
 
+    # 2) (опционально) Обновляем подпись — просто меняем зелёный/красный кружок
     if lot.message_id:
         status_emoji = "🟢" if lot.is_active else "🔴"
         caption = (
@@ -257,10 +261,15 @@ async def toggle_status(call: CallbackQuery, session: AsyncSession, bot: Bot):
             f"💰 <b>{format_price_rub(lot.price)}</b>"
         )
         try:
+            # Не передаём reply_markup, чтобы не затереть клавиатуру
             await bot.edit_message_caption(chat_id=GROUP_ID, message_id=lot.message_id, caption=caption)
         except Exception as e:
             log.warning("Can't edit group message for lot %s: %s", lot.id, e)
 
+    # 3) ✅ Обновляем КЛАВИАТУРУ под постом в группе согласно новому статусу
+    await refresh_lot_keyboard(bot, lot)
+
+    # 4) Ответ и перерисовка админского списка
     await call.answer("✅ Статус изменён")
     await list_lots(call, session)
 def build_buy_kb(lot_id: int) -> InlineKeyboardMarkup:

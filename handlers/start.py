@@ -62,18 +62,21 @@ async def start_cmd(msg: Message, session: AsyncSession):
         )
 
 @router.callback_query(F.data == "open_admin_panel")
-async def open_admin(call: CallbackQuery, session: AsyncSession):
+async def open_admin_panel(call: CallbackQuery, session: AsyncSession):
+    from config import START_PHOTO
     pending = await _pending_count(session)
-    # редактируем существующее сообщение панели → id известен = call.message.message_id
-    await call.message.edit_caption(
-        caption="⚙ Панель администратора:\nВыберите раздел:",
-        reply_markup=build_admin_panel_kb(pending)
+
+    # вместо edit_caption — удаляем и отправляем новое с правильной фоткой
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await call.message.answer_photo(
+      photo=START_PHOTO,
+      caption="⚙ Панель администратора:\nВыберите раздел:",
+      reply_markup=build_admin_panel_kb(pending)
     )
-    # сохраним message_id панели
-    res = await session.execute(select(User).where(User.tg_id == call.from_user.id))
-    admin = res.scalars().first()
-    if admin:
-        await _set_admin_menu_state(session, admin.id, call.message.message_id)
 
 @router.callback_query(F.data == "back_to_admin")
 async def back_to_admin(call: CallbackQuery, session: AsyncSession):

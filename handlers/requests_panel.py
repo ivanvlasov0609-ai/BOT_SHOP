@@ -10,18 +10,20 @@ from sqlalchemy import func
 
 from db import Request, User, Lot, Product, AdminNotification
 from handlers.lots import format_price_rub
-from config import GROUP_ID
+from config import GROUP_ID,START_PHOTO
 
 router = Router()
 log = logging.getLogger(__name__)
 
 PAGE_SIZE = 10
-
+TRIM_LEN = 48
 RU_STATUS = {
     "pending":    ("🟢", "Новая"),
     "processing": ("🟠", "В работе"),
     "done":       ("🔴", "Закрыта"),
 }
+def s_icon(status: str) -> str:
+    return RU_STATUS.get(status, ("⚪", ""))[0]
 def s_badge(status: str) -> str:
     icon, name = RU_STATUS.get(status, ("⚪", status))
     return f"{icon} {name}"
@@ -52,7 +54,11 @@ def requests_root_kb(counts):
     ])
 
 def _entry_title(r: Request, name: str, price: int):
-    return f"#{r.id} • {name} • {format_price_rub(price)} • {s_badge(r.status)}"
+    # подрежем слишком длинные названия
+    if name and len(name) > TRIM_LEN:
+        name = name[:TRIM_LEN - 1] + "…"
+    # формат: 🔴 #12 • Название • 62.800 руб.
+    return f"{s_icon(r.status)} #{r.id} • {name} • {format_price_rub(price)}"
 
 def list_requests_kb(entries, status: str, page: int, total_pages: int):
     rows = []
@@ -108,7 +114,19 @@ class RequestMessage(StatesGroup):
 @router.callback_query(F.data == "requests")
 async def requests_root(call: CallbackQuery, session: AsyncSession):
     counts, total = await get_counts(session)
-    await call.message.edit_caption(caption=f"📑 Заявки (всего: {total})", reply_markup=requests_root_kb(counts))
+
+    # вместо edit_caption — удаляем и отправляем новое с нужной фоткой
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await call.message.answer_photo(
+        photo=START_PHOTO,
+        caption=f"📑 Заявки (всего: {total})",
+        reply_markup=requests_root_kb(counts)
+    )
+
 
 @router.callback_query(F.data.startswith("req_tab:"))
 async def open_requests_tab(call: CallbackQuery, session: AsyncSession):
