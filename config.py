@@ -6,14 +6,14 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = list(map(int, os.getenv("ADMINS", "").split(",")))
 GROUP_ID = int(os.getenv("GROUP_ID", "0"))
-START_PHOTO = "image/start_panel.png"
+START_PHOTO =  "image/start_panel.png"
 
 START_MESSAGE_CLIENT = os.getenv("START_MESSAGE_CLIENT", "👋 Добро пожаловать!")
-START_MESSAGE_ADMIN = os.getenv("START_MESSAGE_ADMIN", "👋 Привет, админ!")
+START_MESSAGE_ADMIN = os.getenv("START_MESSAGE_ADMIN")
 PHOTOS = {
-    "start": "image/admin_panel.png",  # одно фото для всех при /start
+    "start": "image/start_panel.png",  # одно фото для всех при /start
     # Админ-панель
-    "admin_panel": "image/admin_panel.png",
+    "admin_panel": "image/admin.png",
     "lots_panel": "image/lots_panel.png",
     "requests_panel": "image/requests_panel.png",
 }

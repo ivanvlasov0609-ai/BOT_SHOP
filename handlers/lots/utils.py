@@ -1,5 +1,5 @@
 import re
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto, InputMedia
 from config import GROUP_ID
 
 def format_price_rub(amount: int) -> str:
@@ -12,7 +12,6 @@ def parse_price_to_int(text: str):
     return int(cleaned) if cleaned else None
 
 def build_buy_kb(lot_id: int) -> InlineKeyboardMarkup:
-    # тексты ровно как в твоём исходном файле
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛒 Купить", callback_data=f"buy_lot:{lot_id}")],
         [InlineKeyboardButton(text="🚚 Купить с доставкой", callback_data=f"buy_lot_delivery:{lot_id}")]
@@ -20,18 +19,29 @@ def build_buy_kb(lot_id: int) -> InlineKeyboardMarkup:
 
 async def refresh_lot_keyboard(bot, lot) -> None:
     """
-    Обновляет клавиатуру под сообщением лота в группе:
-    - если lot.is_active == True -> показываем кнопки
-    - если False -> убираем кнопки
+    Обновляет сообщение лота в группе:
+    - меняет статус 🔴/🟢 в caption
+    - обновляет inline-кнопки (или убирает их)
     """
     if not getattr(lot, "message_id", None):
         return
+
+    # статус в начале
+    status_icon = "🟢" if getattr(lot, "is_active", False) else "🔴"
+
+    caption = (
+        f"{status_icon} Лот ID: {lot.id}\n\n"
+        f"📦 {lot.name}\n\n"
+        f"{lot.description or ''}\n\n"
+        f"💰 {format_price_rub(lot.price)}"
+    )
+
     kb = build_buy_kb(lot.id) if getattr(lot, "is_active", False) else None
-    try:
-        await bot.edit_message_reply_markup(
-            chat_id=GROUP_ID,
-            message_id=lot.message_id,
-            reply_markup=kb
-        )
-    except Exception:
-        pass
+
+
+    media = InputMediaPhoto(media=lot.photo, caption=caption)
+    await bot.edit_message_media(
+        chat_id=GROUP_ID,
+        message_id=lot.message_id,
+        media=media,
+        reply_markup=kb)

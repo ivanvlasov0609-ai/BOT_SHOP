@@ -5,10 +5,10 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import asyncio
-from config import ADMINS, GROUP_ID
+from config import ADMINS, GROUP_ID, PREPAY_PERCENT
 from db import Lot, User, Request, AdminNotification
 from handlers.lots import format_price_rub  # из lots/__init__.py экспортируется
-from config import PREPAY_PERCENT
+
 router = Router()
 log = logging.getLogger(__name__)
 
@@ -25,7 +25,6 @@ def admin_notify_kb(request_id: int, link: str | None) -> InlineKeyboardMarkup:
     ]
     if link:
         rows.append([InlineKeyboardButton(text="🔗 К объявлению", url=link)])
-    # важна именно эта callback_data — как у тебя было
     rows.append([InlineKeyboardButton(text="🙈 Скрыть", callback_data=f"hide_req:{request_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -92,7 +91,6 @@ async def client_buy_lot(call: CallbackQuery, session: AsyncSession):
         session.add(req)
         await session.flush()  # уже есть req.id внутри транзакции
 
-    # тексты/клавиатура — как у тебя
     link = f"https://t.me/c/{str(GROUP_ID)[4:]}/{lot.message_id}" if lot.message_id else None
     kb = admin_notify_kb(req.id, link)
     text = (
@@ -107,16 +105,13 @@ async def client_buy_lot(call: CallbackQuery, session: AsyncSession):
         f"📝 Заявка ID: <code>{req.id}</code>"
     )
 
-    # ОТПРАВЛЯЕМ КЛИЕНТУ (как было)
     await _send_client_created(call.bot, user.tg_id, req.id, lot.name, lot.price, prepay, "pickup")
 
-    # ПАРАЛЛЕЛЬНО РАССЫЛАЕМ АДМИНАМ
     send_tasks = []
     for admin_tg in ADMINS:
         send_tasks.append(_send_admin_notification(call.bot, admin_tg, text, kb))
     send_results = await asyncio.gather(*send_tasks, return_exceptions=True)
 
-    # СОХРАНЯЕМ AdminNotification ТОЛЬКО ДЛЯ УСПЕШНЫХ ОТПРАВОК (АТОМАРНО)
     async with session.begin_nested():
         for admin_tg, res in zip(ADMINS, send_results):
             if isinstance(res, Exception):

@@ -10,7 +10,8 @@ from aiogram import __version__ as aiogram_version
 
 from config import BOT_TOKEN
 from handlers import start, raffle, lots, orders, catalog,requests_cleanup
-from handlers import requests_panel  # <-- новый роутер
+#from handlers import requests_panel  # <-- новый роутер
+from handlers.requests_panel import routers as requests_routers
 from db import init_db, get_session_middleware, engine
 
 logging.basicConfig(
@@ -50,9 +51,11 @@ async def main():
     dp.include_router(raffle.router)
     for r in lots.routers:
         dp.include_router(r)
+    for r in requests_routers:
+        dp.include_router(r)
     dp.include_router(orders.router)
     dp.include_router(catalog.router)
-    dp.include_router(requests_panel.router)  # <-- подключили\
+    #dp.include_router(requests_panel.router)  # <-- подключили\
     dp.include_router(requests_cleanup.router)
 
     me = await bot.get_me()
