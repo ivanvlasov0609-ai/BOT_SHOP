@@ -20,28 +20,21 @@ def _availability(is_active: bool) -> str:
 @router.callback_query(F.data == "catalog")
 async def show_catalog(call: CallbackQuery, session: AsyncSession):
     """Вывод каталога лотов ОДНИМ сообщением, как у тебя было раньше."""
-    try:
-        await call.message.delete()
-    except Exception:
-        pass
-
     result = await session.execute(select(Lot))
     lots = result.scalars().all()
 
     if not lots:
         # если пусто — просто вернёмся на старт с меню
         try:
-            await call.message.answer_photo(
-                FSInputFile(START_PHOTO),
-                caption="📦 Каталог пуст.",
-                reply_markup=client_kb if call.from_user.id not in ADMINS else build_admin_main_kb()
-            )
+            await call.answer("📦 Каталог пуст.",show_alert=True)
         except Exception:
-            await call.message.answer(
-                "📦 Каталог пуст.",
-                reply_markup=client_kb if call.from_user.id not in ADMINS else build_admin_main_kb()
-            )
+            await call.answer("📦 Каталог пуст.",show_alert=True)
         return
+    else:
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
 
     # формируем текст каталога
     lines = ["📂 <b>Каталог лотов:</b>", ""]

@@ -26,6 +26,7 @@ def build_admin_panel_kb(pending_count: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📦 Лоты", callback_data="lots")],
         [InlineKeyboardButton(text="🎟 Промокоды", callback_data="admin_promocodes")],
         [InlineKeyboardButton(text="🎁 Розыгрыши", callback_data="admin_raffle")],
+        [InlineKeyboardButton(text="🧹 Очистить заявки", callback_data="requests_cleanup")],  # <— добавлено
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_main")],
     ])
 

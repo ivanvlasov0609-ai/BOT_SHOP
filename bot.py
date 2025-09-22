@@ -9,7 +9,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram import __version__ as aiogram_version
 
 from config import BOT_TOKEN
-from handlers import start, raffle, lots, orders, catalog
+from handlers import start, raffle, lots, orders, catalog,requests_cleanup
 from handlers import requests_panel  # <-- новый роутер
 from db import init_db, get_session_middleware, engine
 
@@ -52,7 +52,8 @@ async def main():
         dp.include_router(r)
     dp.include_router(orders.router)
     dp.include_router(catalog.router)
-    dp.include_router(requests_panel.router)  # <-- подключили
+    dp.include_router(requests_panel.router)  # <-- подключили\
+    dp.include_router(requests_cleanup.router)
 
     me = await bot.get_me()
     db_url = engine.url.render_as_string(hide_password=True)
