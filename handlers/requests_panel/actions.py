@@ -16,7 +16,7 @@ from db import User, Request, AdminUIState
 from aiogram.types import FSInputFile
 from config import PHOTOS
 from keyboards.inline import build_admin_panel_kb,requests_root_kb
-
+from utils.ui import update_panel
 router = Router()
 log = logging.getLogger(__name__)
 

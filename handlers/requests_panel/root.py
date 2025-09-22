@@ -4,9 +4,10 @@ from aiogram.types import CallbackQuery, FSInputFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
-
+from keyboards.inline import requests_root_kb
 from db import Request, User, AdminUIState
 from config import PHOTOS
+from utils.ui import update_panel
 from keyboards.inline import requests_root_kb
 
 router = Router()
@@ -27,16 +28,13 @@ async def requests_root(call: CallbackQuery, session: AsyncSession):
     await call.answer()
     counts, total = await get_counts(session)
 
-    try:
-        await call.message.delete()
-    except Exception:
-        pass
-
-    m = await call.message.answer_photo(
-        photo=FSInputFile(PHOTOS["requests_panel"]),
-        caption=f"📑 Заявки (всего: {total})",
-        reply_markup=requests_root_kb(counts)
+    await update_panel(
+        call.message,
+        PHOTOS["requests_panel"],
+        f"📑 Заявки (всего: {total})",
+        requests_root_kb(counts)
     )
+    m = call.message
 
     # сохраняем id сообщения панели заявок для автообновления
     res = await session.execute(select(User).where(User.tg_id == call.from_user.id))

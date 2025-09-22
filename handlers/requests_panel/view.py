@@ -2,13 +2,13 @@ import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from aiogram.types import InputMediaPhoto
 from db import Request, Lot, Product, User
 from config import GROUP_ID
 from handlers.lots.utils import format_price_rub
 from keyboards.inline import combined_kb
 from handlers.requests_panel.utils import fmt_dt_ru, s_badge, lot_status_dot
-
+from utils.ui import update_panel
 router = Router()
 log = logging.getLogger(__name__)
 
@@ -69,10 +69,10 @@ async def req_open(call: CallbackQuery, session: AsyncSession):
     kb = combined_kb(req, user.tg_id if user else None, lot_link)
 
     if photo:
-        try:
-            await call.message.delete()
-        except Exception:
-            pass
-        await call.message.answer_photo(photo=photo, caption=text, reply_markup=kb)
+        await call.message.edit_media(
+            media=InputMediaPhoto(media=photo, caption=text),
+            reply_markup=kb
+        )
     else:
         await call.message.edit_caption(caption=text, reply_markup=kb)
+

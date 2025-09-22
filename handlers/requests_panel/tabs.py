@@ -10,7 +10,7 @@ from config import PHOTOS
 from handlers.lots.utils import format_price_rub
 from handlers.requests_panel.utils import s_badge, s_icon
 from keyboards.inline import list_requests_kb
-
+from utils.ui import update_panel
 router = Router()
 log = logging.getLogger(__name__)
 
@@ -58,13 +58,11 @@ async def open_requests_tab(call: CallbackQuery, session: AsyncSession):
 
     caption = f"📂 {s_badge(status)} заявки (стр. {page+1}/{total_pages}):"
 
-    try:
-        await call.message.delete()
-    except Exception:
-        pass
+    caption = f"📂 {s_badge(status)} заявки (стр. {page + 1}/{total_pages}):"
 
-    await call.message.answer_photo(
-        photo=FSInputFile(PHOTOS["requests_panel"]),
-        caption=caption,
-        reply_markup=list_requests_kb(entries, status, page, total_pages)
+    await update_panel(
+        call.message,
+        PHOTOS["requests_panel"],
+        caption,
+        list_requests_kb(entries, status, page, total_pages)
     )
